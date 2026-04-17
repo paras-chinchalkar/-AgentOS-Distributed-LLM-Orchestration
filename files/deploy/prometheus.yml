@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s   # how often to scrape targets
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape FastAPI orchestrator
+  - job_name: 'orchestrator'
+    static_configs:
+      - targets: ['orchestrator:8000']
+
+  # Scrape Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # Scrape Postgres (requires postgres_exporter if you want DB metrics)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']

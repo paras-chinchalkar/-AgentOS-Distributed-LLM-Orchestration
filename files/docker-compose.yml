@@ -1,0 +1,98 @@
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────── #
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: agent_os
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: secret
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent_os"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  # ── Telemetry ───────────────────────────────────────────────────── #
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./deploy/otel-config.yaml:/etc/otel/config.yaml"]
+    ports: ["4317:4317", "55680:55680"]
+    depends_on: [jaeger, prometheus]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14250:14250"   # gRPC
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports: ["9091:9090"]
+
+  grafana:
+    image: grafana/grafana:10.3.0
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on: [prometheus]
+
+  # ── Application ─────────────────────────────────────────────────── #
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: files/Dockerfile
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agent:secret@postgres:5432/agent_os
+      REDIS_URL: redis://redis:6379
+      OTLP_ENDPOINT: http://otel-collector:4317
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis:    {condition: service_healthy}
+    restart: unless-stopped
+
+  # Worker pods — scale horizontally
+  worker:
+    build:
+      context: ..
+      dockerfile: files/Dockerfile
+    command: python -m src.runtime.worker_process
+    environment:
+      DATABASE_URL: postgresql+asyncpg://agent:secret@postgres:5432/agent_os
+      REDIS_URL: redis://redis:6379
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis:    {condition: service_healthy}
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+
+volumes:
+  pgdata:
+  redisdata:

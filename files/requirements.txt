@@ -1,0 +1,26 @@
+# Core
+anthropic>=0.28.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.6.0
+
+# Database
+asyncpg>=0.29.0
+pgvector>=0.2.5
+
+# Redis
+redis[asyncio]>=5.0.1
+
+# LangGraph / LangChain
+langgraph>=0.0.55
+langchain-core>=0.2.0
+
+# Observability
+opentelemetry-sdk>=1.24.0
+opentelemetry-exporter-otlp-proto-grpc>=1.24.0
+opentelemetry-instrumentation-fastapi>=0.45b0
+prometheus_client>=0.20.0
+
+# Utilities
+python-dotenv>=1.0.0
+tenacity>=8.2.3
