@@ -6,7 +6,7 @@ build:
   dockerfile: files/Dockerfile
 
 deploy:
-  startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+  startCommand: python -m uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 1
   healthcheck:
     path: /api/v1/health
     interval: 30s
