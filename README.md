@@ -279,15 +279,4 @@ MIT
 
 ---
 
-## Support
 
-- 📖 **Docs:** [DEPLOYMENT.md](./DEPLOYMENT.md) for Railway deployment
-- 🐛 **Issues:** Check existing issues or create a new one
-- 🤖 **LLM Backend:** [Groq Console](https://console.groq.com)
-- 📚 **Framework Docs:**
-  - [FastAPI](https://fastapi.tiangolo.com)
-  - [LangGraph](https://python.langchain.com/docs/langgraph)
-  - [Railway](https://docs.railway.app)
-
-#   - A g e n t O S - D i s t r i b u t e d - L L M - O r c h e s t r a t i o n  
- # -AgentOS-Distributed-LLM-Orchestration
