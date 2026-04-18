@@ -6,13 +6,13 @@ import logging
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.core.config import settings
-from src.core.db import init_db
+from src.core.db import init_db, Base
 from src.core.message_bus import MessageBus, get_redis, close_redis
 from src.runtime.lifecycle import LifecycleManager
 from src.runtime.worker import run_worker
@@ -81,6 +81,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# HTTP methods that mutate state — a reset is appropriate after these.
+_WRITE_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+async def _reset_database() -> None:
+    """Drop and recreate all tables, returning the database to a clean state."""
+    from src.core.db import _engine
+    if _engine is None:
+        return
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database reset complete.")
+
+
+@app.middleware("http")
+async def db_reset_middleware(request: Request, call_next):
+    """Reset the database after write operations (POST/PUT/DELETE/PATCH).
+
+    GET, HEAD, and OPTIONS requests are read-only — skipping the reset for
+    these methods ensures that workflow data and executive summaries written
+    by the background worker remain visible when the frontend polls for them.
+    """
+    response = await call_next(request)
+    if request.method in _WRITE_METHODS:
+        await _reset_database()
+    return response
+
 
 # REST + WebSocket routes
 app.include_router(router)
