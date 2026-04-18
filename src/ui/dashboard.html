@@ -979,20 +979,55 @@ function handleEvent(ev) {
 function handleWorkflowCreated(ev) { loadWorkflows(); }
 
 function handleWorkflowStatus(ev) {
-  loadWorkflows();
+  if (ev.status === 'completed' || ev.status === 'failed') {
+    fetchAndRefreshWorkflow(ev.workflow_id, ev.status);
+  } else {
+    loadWorkflows();
+  }
   if (ev.workflow_id === selectedWorkflowId) {
     updateGraphStatus(ev.status);
-    if (ev.status === 'completed') {
-      populateOutput(ev.workflow_id);
-    }
   }
 }
 
 function handleWorkflowFailed(ev) {
-  loadWorkflows();
+  fetchAndRefreshWorkflow(ev.workflow_id, 'failed');
   if (ev.workflow_id === selectedWorkflowId) {
     updateGraphStatus('failed');
     addLog('error', 'workflow_failed', `error: ${ev.error || ''}`, 'error');
+  }
+}
+
+/**
+ * Fetch the latest workflow record from the API, update the local cache,
+ * refresh the workflow list, and — if this is the currently selected workflow —
+ * populate the output panel immediately with the final_output.
+ */
+async function fetchAndRefreshWorkflow(workflowId, status) {
+  try {
+    const resp = await fetch(`/api/v1/workflows/${workflowId}`);
+    if (!resp.ok) { await loadWorkflows(); return; }
+    const freshWf = await resp.json();
+
+    // Update the in-memory cache so populateOutput sees the latest final_output
+    const idx = allWorkflows.findIndex(w => w.id === workflowId);
+    if (idx !== -1) {
+      allWorkflows[idx] = freshWf;
+    } else {
+      allWorkflows.push(freshWf);
+    }
+
+    // Refresh the sidebar list to reflect the new status / summary
+    renderWorkflows(allWorkflows);
+    updateStats();
+
+    // If this workflow is currently open, show the output panel right away
+    if (workflowId === selectedWorkflowId) {
+      updateGraphStatus(status || freshWf.status);
+      await populateOutput(workflowId);
+    }
+  } catch(e) {
+    // Fall back to a full list reload on any network error
+    await loadWorkflows();
   }
 }
 
@@ -1184,11 +1219,22 @@ async function loadAgents(workflowId) {
 
 async function populateOutput(workflowId) {
   try {
-    const agents = currentAgents.length > 0 ? currentAgents : await (await fetch(`/api/v1/workflows/${workflowId}/agents`)).json();
+    // Always fetch fresh agents for this specific workflow so we don't
+    // accidentally display stale data from a previously selected workflow.
+    const agentsResp = await fetch(`/api/v1/workflows/${workflowId}/agents`);
+    const agents = agentsResp.ok ? await agentsResp.json() : [];
+
+    // Use the already-refreshed cache entry (updated by fetchAndRefreshWorkflow),
+    // or fall back to a direct fetch if somehow not present.
     let wf = allWorkflows.find(w => w.id === workflowId);
     if (!wf) {
       wf = await (await fetch(`/api/v1/workflows/${workflowId}`)).json();
       allWorkflows.push(wf);
+    }
+
+    // Keep currentAgents in sync when populating the selected workflow
+    if (workflowId === selectedWorkflowId) {
+      currentAgents = agents;
     }
 
     document.getElementById('outputPanel').classList.add('visible');
@@ -1196,6 +1242,8 @@ async function populateOutput(workflowId) {
 
     const getOutput = (key) => agents.find(a => a.agent_name === key)?.output || '';
 
+    // Prefer the authoritative final_output field from the workflow record,
+    // then fall back to individual agent outputs for older/partial runs.
     const summary = wf?.final_output || getOutput('summarizer') || getOutput('aggregator') || '';
     const research = getOutput('researcher') || '';
     const critique = getOutput('critic') || '';
@@ -1214,6 +1262,9 @@ async function populateOutput(workflowId) {
     setSection('outResearch', research, '🔍 Research Findings');
     setSection('outCritique', critique, '🧐 Critical Analysis');
     setSection('outFactcheck', factCheck, '🔎 Fact Check Results');
+
+    // Refresh the errors tab with the latest agent states
+    populateErrorTab(agents);
   } catch(e) { /* silent */ }
 }
 
